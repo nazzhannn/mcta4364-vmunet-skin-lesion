@@ -1,0 +1,127 @@
+C:\Users\ganaz\mcta4364-venv\Lib\site-packages\timm\models\layers\__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+loaded checkpoints\best-vmunet-isic18.pth: 0 missing, 176 unexpected keys
+  8/808
+  16/808
+  24/808
+  32/808
+  40/808
+  48/808
+  56/808
+  64/808
+  72/808
+  80/808
+  88/808
+  96/808
+  104/808
+  112/808
+  120/808
+  128/808
+  136/808
+  144/808
+  152/808
+  160/808
+  168/808
+  176/808
+  184/808
+  192/808
+  200/808
+  208/808
+  216/808
+  224/808
+  232/808
+  240/808
+  248/808
+  256/808
+  264/808
+  272/808
+  280/808
+  288/808
+  296/808
+  304/808
+  312/808
+  320/808
+  328/808
+  336/808
+  344/808
+  352/808
+  360/808
+  368/808
+  376/808
+  384/808
+  392/808
+  400/808
+  408/808
+  416/808
+  424/808
+  432/808
+  440/808
+  448/808
+  456/808
+  464/808
+  472/808
+  480/808
+  488/808
+  496/808
+  504/808
+  512/808
+  520/808
+  528/808
+  536/808
+  544/808
+  552/808
+  560/808
+  568/808
+  576/808
+  584/808
+  592/808
+  600/808
+  608/808
+  616/808
+  624/808
+  632/808
+  640/808
+  648/808
+  656/808
+  664/808
+  672/808
+  680/808
+  688/808
+  696/808
+  704/808
+  712/808
+  720/808
+  728/808
+  736/808
+  744/808
+  752/808
+  760/808
+  768/808
+  776/808
+  784/808
+  792/808
+  800/808
+  808/808
+{
+  "checkpoint": "checkpoints\\best-vmunet-isic18.pth",
+  "split": "test",
+  "images": 808,
+  "pooled": {
+    "miou": 85.47,
+    "dsc": 92.16,
+    "acc": 96.64,
+    "spe": 98.0,
+    "sen": 91.7
+  },
+  "per_image": {
+    "dice_mean": 91.17,
+    "dice_median": 93.93,
+    "iou_mean": 84.81,
+    "hd95_mean_px": 11.28,
+    "images_dice_below_0.7": 27,
+    "border_error_share_mean": 83.5,
+    "border_band_px": 5
+  },
+  "cpu_seconds_per_image": 0.605
+}
+saved results\authors_ckpt\test\examples.png

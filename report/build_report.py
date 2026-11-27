@@ -88,7 +88,7 @@ def main():
         "GAP": f2(gap), "GAP_AUTH": f2(gap_auth),
         "B_DMEAN": f2(bi["dice_mean"]), "B_DMED": f2(bi["dice_median"]), "B_HD": f2(bi["hd95_mean_px"]),
         "B_LOW": bi["images_dice_below_0.7"], "B_BORDER": bi["border_error_share_mean"], "BAND": bi["border_band_px"],
-        "A_DMEAN": f2(ai["dice_mean"]), "A_HD": f2(ai["hd95_mean_px"]), "A_LOW": ai["images_dice_below_0.7"],
+        "A_DMEAN": f2(ai["dice_mean"]), "A_DMED": f2(ai["dice_median"]), "A_HD": f2(ai["hd95_mean_px"]), "A_LOW": ai["images_dice_below_0.7"],
         "A_BORDER": ai["border_error_share_mean"],
         "SEC_IMG": base["cpu_seconds_per_image"],
     }
@@ -104,10 +104,23 @@ def main():
     if not browser:
         sys.exit("no Edge/Chrome found; open report/report.html and print to PDF")
     pdf = os.path.join(R, PDF_NAME)
+    if os.path.exists(pdf):
+        os.remove(pdf)
+    # a separate profile so an open Edge window does not swallow the job
     subprocess.run([browser, "--headless", "--disable-gpu", "--no-pdf-header-footer",
+                    "--user-data-dir=" + os.path.join(os.environ.get("TEMP", R), "mcta_edge_profile"),
                     f"--print-to-pdf={pdf}", "file:///" + out_html.replace("\\", "/")], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print("wrote", pdf)
+    # Edge can return before the file is fully written: wait until its size settles
+    import time
+    last = -1
+    for _ in range(120):
+        size = os.path.getsize(pdf) if os.path.exists(pdf) else -1
+        if size > 0 and size == last:
+            break
+        last = size
+        time.sleep(1)
+    print("wrote", pdf, f"({last} bytes)")
 
 
 if __name__ == "__main__":

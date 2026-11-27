@@ -87,7 +87,26 @@ python evaluate.py --ckpt checkpoints/best-vmunet-isic18.pth --out results/autho
 
 ## 4. Results
 
-RESULTS_PLACEHOLDER
+Test split, 808 images. Pooled pixel metrics (%), using the formulas in the official `engine.py`:
+
+| Model | mIoU | DSC | Acc | Spe | Sen |
+|---|---|---|---|---|---|
+| VM-UNet, paper Table I (300 epochs, A6000, paper's split) | 81.35 | 89.71 | 94.91 | 96.13 | 91.12 |
+| Authors' released checkpoint, run on our split (optimistic: probably saw some of our test images in training) | 85.47 | 92.16 | 96.64 | 98.00 | 91.70 |
+| **Our baseline: VM-UNet trained on CPU, 6 epochs** | **79.88** | **88.81** | **95.23** | **97.23** | **87.93** |
+
+For our baseline, the mean per-image Dice is 86.96, HD95 is 17.98 px, and 75.7% of wrong pixels lie within 5 px of the true border.
+Files: `results/baseline/test/metrics.json`, `per_image.csv`, `examples.png`; training log: `results/baseline/log.csv`.
+
+Note on the run: training was launched for 8 epochs (cosine schedule over 8 epochs) and stopped during epoch 7 when the
+machine's session ended. The reported baseline is the best checkpoint of epochs 1–6, chosen by validation loss (epoch 6).
+It was saved as `checkpoints/baseline_e6_best.pth` and evaluated with:
+
+```bash
+python evaluate.py --ckpt checkpoints/baseline_e6_best.pth --out results/baseline/test --label "CPU baseline"
+```
+
+The progress report PDF (`report/MCTA4364_Progress_MuhammadNazhan.pdf`) is generated from these files by `python report/build_report.py`.
 
 ## Credits and AI use
 

@@ -1,0 +1,22 @@
+{
+  "checkpoint": "checkpoints\\baseline_e6_best.pth",
+  "split": "test",
+  "images": 808,
+  "pooled": {
+    "miou": 79.88,
+    "dsc": 88.81,
+    "acc": 95.23,
+    "spe": 97.23,
+    "sen": 87.93
+  },
+  "per_image": {
+    "dice_mean": 86.96,
+    "dice_median": 92.19,
+    "iou_mean": 79.51,
+    "hd95_mean_px": 17.98,
+    "images_dice_below_0.7": 67,
+    "border_error_share_mean": 75.7,
+    "border_band_px": 5
+  },
+  "cpu_seconds_per_image": 0.617
+}

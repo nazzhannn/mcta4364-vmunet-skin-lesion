@@ -42,6 +42,33 @@ def hd95(p, g):
     return float(np.percentile(d, 95))
 
 
+def plot_examples(rows, probs, a):
+    """3 worst and 3 best images as columns; rows: image, ground truth, prediction overlay."""
+    srt = sorted(rows, key=lambda r: r["dice"])
+    pick = [("worst", r) for r in srt[:3]] + [("best", r) for r in srt[::-1][:3]]
+    fig, ax = plt.subplots(3, len(pick), figsize=(1.75 * len(pick), 5.6))
+    for j, (tag, r) in enumerate(pick):
+        img = Image.open(os.path.join(a.data, a.split, "images", r["id"] + ".png"))
+        gt = np.array(Image.open(os.path.join(a.data, a.split, "masks", r["id"] + ".png"))) > 127
+        pr = probs[r["id"]] >= 0.5
+        ov = np.array(img).copy()
+        ov[pr & ~gt] = [255, 0, 0]      # false positive: red
+        ov[~pr & gt] = [0, 90, 255]     # false negative: blue
+        ax[0, j].imshow(img); ax[0, j].set_title(f"{tag}\n{r['id']}", fontsize=7)
+        ax[1, j].imshow(gt, cmap="gray")
+        ax[2, j].imshow(ov); ax[2, j].contour(pr, levels=[0.5], colors="yellow", linewidths=0.7)
+        ax[2, j].set_title(f"Dice {r['dice']:.3f}", fontsize=7)
+        for i in range(3):
+            ax[i, j].set_xticks([]); ax[i, j].set_yticks([])
+    ax[0, 0].set_ylabel("image", fontsize=7)
+    ax[1, 0].set_ylabel("ground truth", fontsize=7)
+    ax[2, 0].set_ylabel(f"{a.label}\n(red FP, blue FN)", fontsize=7)
+    plt.tight_layout(pad=0.4)
+    plt.savefig(os.path.join(a.out, "examples.png"), dpi=170)
+    plt.close()
+    print("saved", os.path.join(a.out, "examples.png"))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
@@ -50,6 +77,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--threads", type=int, default=os.cpu_count())
     ap.add_argument("--label", default="VM-UNet")
+    ap.add_argument("--examples-only", action="store_true",
+                    help="redraw examples.png from an existing per_image.csv (predicts only those 6 images)")
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
     os.makedirs(a.out, exist_ok=True)
@@ -63,6 +92,18 @@ def main():
     model.eval()
 
     ds = ISICSplit(a.data, a.split, transforms_for(False))
+    if a.examples_only:
+        rows = [dict(r, dice=float(r["dice"])) for r in csv.DictReader(open(os.path.join(a.out, "per_image.csv")))]
+        srt = sorted(rows, key=lambda r: r["dice"])
+        need = {r["id"] for r in srt[:3] + srt[-3:]}
+        probs = {}
+        with torch.no_grad():
+            for i, iid in enumerate(ds.ids):
+                if iid in need:
+                    img, _, _ = ds[i]
+                    probs[iid] = model(img[None])[0, 0].numpy()
+        plot_examples(rows, probs, a)
+        return
     ld = DataLoader(ds, batch_size=8, shuffle=False, num_workers=0)
     tp = fp = tn = fn = 0
     rows, probs = [], {}
@@ -113,26 +154,7 @@ def main():
         w.writerows(rows)
     print(json.dumps(res, indent=2))
 
-    # qualitative examples: 3 best, 3 worst
-    srt = sorted(rows, key=lambda r: r["dice"])
-    pick = [("worst", r) for r in srt[:3]] + [("best", r) for r in srt[::-1][:3]]
-    fig, ax = plt.subplots(len(pick), 3, figsize=(7.5, 2.6 * len(pick)))
-    for i, (tag, r) in enumerate(pick):
-        img = Image.open(os.path.join(a.data, a.split, "images", r["id"] + ".png"))
-        gt = np.array(Image.open(os.path.join(a.data, a.split, "masks", r["id"] + ".png"))) > 127
-        pr = probs[r["id"]] >= 0.5
-        ax[i, 0].imshow(img); ax[i, 0].set_title(f"{tag}: {r['id']}", fontsize=8)
-        ax[i, 1].imshow(gt, cmap="gray"); ax[i, 1].set_title("ground truth", fontsize=8)
-        ov = np.array(img).copy()
-        ov[pr & ~gt] = [255, 0, 0]      # false positive: red
-        ov[~pr & gt] = [0, 90, 255]     # false negative: blue
-        ax[i, 2].imshow(ov); ax[i, 2].contour(pr, levels=[0.5], colors="yellow", linewidths=0.8)
-        ax[i, 2].set_title(f"{a.label} Dice {r['dice']:.3f} (red FP, blue FN)", fontsize=8)
-        for j in range(3):
-            ax[i, j].axis("off")
-    plt.tight_layout()
-    plt.savefig(os.path.join(a.out, "examples.png"), dpi=150)
-    print("saved", os.path.join(a.out, "examples.png"))
+    plot_examples(rows, probs, a)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,22 @@
+{
+  "checkpoint": "checkpoints\\best-vmunet-isic18.pth",
+  "split": "test",
+  "images": 808,
+  "pooled": {
+    "miou": 85.47,
+    "dsc": 92.16,
+    "acc": 96.64,
+    "spe": 98.0,
+    "sen": 91.7
+  },
+  "per_image": {
+    "dice_mean": 91.17,
+    "dice_median": 93.93,
+    "iou_mean": 84.81,
+    "hd95_mean_px": 11.28,
+    "images_dice_below_0.7": 27,
+    "border_error_share_mean": 83.5,
+    "border_band_px": 5
+  },
+  "cpu_seconds_per_image": 0.605
+}
