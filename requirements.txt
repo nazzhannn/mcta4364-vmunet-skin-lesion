@@ -1,0 +1,13 @@
+# install torch/torchvision first (CPU build: --index-url https://download.pytorch.org/whl/cpu)
+numba>=0.60
+timm
+einops
+numpy
+scipy
+pillow
+matplotlib
+scikit-learn
+tensorboardX
+thop
+medpy
+SimpleITK
