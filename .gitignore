@@ -1,0 +1,7 @@
+data/
+results/
+pre_trained_weights/*.pth
+*.pth
+__pycache__/
+*.pyc
+.venv/
