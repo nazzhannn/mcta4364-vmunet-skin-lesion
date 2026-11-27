@@ -4,7 +4,7 @@ MCTA 4364 Machine Vision, Semester 1 2026/2027 · Project progress report (`prog
 
 | | |
 |---|---|
-| Member | **NAME_PLACEHOLDER** (matric **MATRIC_PLACEHOLDER**), group representative, solo group |
+| Member | **Muhammad Nazhan bin Mohamed Nadzri** (matric **2313703**), group representative, solo group |
 | Track | Track 2: research paper extension |
 | Paper | J. Ruan, J. Li, S. Xiang, *VM-UNet: Vision Mamba UNet for Medical Image Segmentation*, arXiv:2402.02491, 2024. [PDF](https://arxiv.org/pdf/2402.02491) |
 | Official code | https://github.com/JCruan519/VM-UNet (commit `b87827e`, Apache-2.0) |
