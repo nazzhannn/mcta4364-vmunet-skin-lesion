@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>MCTA4364 Progress Report</title>
+<style>
+@page { size: A4; margin: 15mm 16mm 15mm 16mm; }
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; line-height: 1.38; color: #111; margin: 0; }
+h1 { font-size: 16pt; margin: 0 0 2px; color: #1f3b5a; }
+h2 { font-size: 12pt; color: #1f3b5a; border-bottom: 1.5px solid #1f3b5a; padding-bottom: 2px; margin: 13px 0 6px; }
+h3 { font-size: 10.5pt; margin: 9px 0 3px; }
+p { margin: 3px 0 6px; text-align: justify; }
+ul, ol { margin: 2px 0 6px; padding-left: 20px; }
+li { margin: 1px 0; }
+table { border-collapse: collapse; width: 100%; margin: 4px 0 8px; font-size: 9pt; }
+th, td { border: 1px solid #b8c4d0; padding: 3px 5px; text-align: left; vertical-align: top; }
+th { background: #e8eef5; }
+td.n { color: #555; font-size: 8.5pt; }
+.res td:nth-child(n+2):nth-child(-n+6) { text-align: right; font-variant-numeric: tabular-nums; }
+.head { border: 1.5px solid #1f3b5a; padding: 8px 12px; margin-bottom: 8px; }
+.head table { margin: 6px 0 0; font-size: 9.5pt; }
+.head td { border: none; padding: 1px 8px 1px 0; }
+.fig { text-align: center; margin: 6px 0 8px; break-inside: avoid; }
+.fig img { max-width: 100%; }
+.cap { font-size: 8.8pt; color: #333; margin-top: 2px; text-align: center; }
+.two { display: flex; gap: 10px; align-items: flex-start; }
+.two > div { flex: 1; }
+.pb { break-before: page; }
+.box { background: #f4f7fa; border-left: 3px solid #1f3b5a; padding: 5px 9px; margin: 6px 0; }
+.sig { height: 34px; }
+.ref li { font-size: 9pt; margin-bottom: 2px; }
+code { font-family: Consolas, monospace; font-size: 9pt; }
+</style></head><body>
+
+<div class="head">
+  <h1>Improving Skin Lesion Boundary Segmentation Using VM-UNet</h1>
+  <div>MCTA 4364 Machine Vision · Semester 1, 2026/2027 · Project Progress Report</div>
+  <table>
+    <tr><td><b>Track</b></td><td>Track 2: research paper extension</td></tr>
+    <tr><td><b>Group</b></td><td>{{NAME}} (matric {{MATRIC}}), group representative, solo group</td></tr>
+    <tr><td><b>GitHub</b></td><td><a href="{{REPO}}">{{REPO}}</a> (tag <code>progress-v1</code>)</td></tr>
+    <tr><td><b>Paper</b></td><td>J. Ruan, J. Li, S. Xiang, “VM-UNet: Vision Mamba UNet for Medical Image Segmentation”, arXiv:2402.02491, 2024 [1]. Official code: github.com/JCruan519/VM-UNet</td></tr>
+  </table>
+</div>
+
+<h2>1. Introduction</h2>
+<p>Melanoma is the deadliest common skin cancer, and it is far more treatable when found early. Dermoscopy images let a clinician see a lesion's colour and structure, and an accurate outline of the lesion (segmentation) is the first step of most computer-aided screening systems: shape, border irregularity and size are all measured from it. The task is hard because lesion borders are often fuzzy and low in contrast, and images contain hair, ruler marks, ink and dark lens corners.</p>
+<p>VM-UNet [1] is a U-shaped segmentation network built entirely from Visual State Space (VSS) blocks, taken from VMamba [3]. CNNs see only a local window, and Transformers see the whole image but cost grows quadratically with the number of pixels. Mamba's selective state space model (S6) [2] instead scans the image as a sequence, with input-dependent parameters, in linear time, so every pixel can still be influenced by the whole image. VM-UNet scans each feature map in four directions and reports a DSC of 89.71% on ISIC 2018 with 27.43 M parameters.</p>
+<div class="box"><b>Objective.</b> (1) Reproduce the VM-UNet baseline on ISIC 2018 and compare it with the paper's reported numbers. (2) Extend it to segment lesion <i>borders</i> more accurately, measured by per-image Dice, the 95% Hausdorff distance (HD95) and the share of errors near the border, under the same data split and training budget as the baseline.</div>
+<p><b>Status at this report.</b> The official code needs an NVIDIA GPU, because the Mamba scan is a CUDA kernel (<code>mamba_ssm</code>). The only machine available has an AMD GPU, so I rewrote the scan for the CPU (Section 3.3), checked it against a reference implementation, and trained and evaluated the baseline on the CPU. The dataset is prepared and analysed, and the extension is designed from the baseline's errors.</p>
+
+<h2>2. Dataset</h2>
+<h3>2.1 Source, licence, size and format</h3>
+<p><b>ISIC 2018 Challenge, Task 1: lesion boundary segmentation</b> [4], with images from HAM10000 [5] and other ISIC archive sources; downloaded from the official challenge site (challenge.isic-archive.com/data), licence CC-0. I use the official training set (2,594 images) and validation set (100 images): {{N_IMG}} images in total, the same number as the paper. Each image is an RGB dermoscopy JPEG with one binary PNG mask (lesion = 255, background = 0), so there are two pixel classes. The originals come in {{N_SIZES}} different sizes, from {{W_MIN}}–{{W_MAX}} px wide and {{H_MIN}}–{{H_MAX}} px high; the most common is {{TOP_SIZE}} ({{TOP_SIZE_N}} images).</p>
+<h3>2.2 Split</h3>
+<table><tr><th>Split</th><th>Images</th><th>Purpose</th></tr>
+<tr><td>Train</td><td>{{N_TRAIN}}</td><td>training</td></tr>
+<tr><td>Validation</td><td>{{N_VAL}}</td><td>choosing the checkpoint (lowest validation loss)</td></tr>
+<tr><td>Test</td><td>{{N_TEST}}</td><td>used once, for the reported results</td></tr></table>
+<p>The paper splits 7:3 (1,886 train / 808 test), but its split is only available on Baidu Pan, which I could not access. I made my own random split with a fixed seed (42): 30% test (808, the same size as the paper's), and 10% of the remaining 1,886 as a validation set. The official code chooses its best checkpoint on the test set, which inflates test scores; a separate validation set avoids that. The exact image IDs per split are in <code>data/isic18/splits.csv</code>.</p>
+<h3>2.3 Pre-processing and augmentation</h3>
+<ul>
+<li><b>Resize</b> to 256×256: images bilinear, masks nearest-neighbour, then thresholded so they stay binary (<code>scripts/prepare_isic18.py</code>).</li>
+<li><b>Normalisation</b> as in the official code: subtract a fixed dataset mean and divide by its std, then min–max rescale each image to 0–255.</li>
+<li><b>Augmentation</b> (training only, official): horizontal flip, vertical flip and rotation, each with p = 0.5. While reading the code I found that the rotation angle is drawn once, when the transform is created, so every rotated image is turned by the <i>same</i> angle in the whole run. I kept this for a faithful baseline and list the fix under the extension.</li>
+</ul>
+<h3>2.4 Exploratory analysis</h3>
+<div class="fig"><img src="../figures/samples.png" style="width:92%"><div class="cap">Figure 1. Random training images (256×256) with the ground-truth border in green.</div></div>
+<div class="two"><div>
+<p><b>Class imbalance.</b> Lesion pixels are {{LES_SHARE}}% of all pixels, so the task is not extremely imbalanced overall, but lesion size varies a lot: the median lesion covers {{LES_MED}}% of the image, {{SMALL}} images have a lesion under 5%, and {{LARGE}} have one over 70% ({{FULL}} cover over 95%, where the border runs off the image). Mean lesion share is {{LES_TR}}% / {{LES_VA}}% / {{LES_TE}}% in train / val / test, so the random split is balanced.</p>
+<p><b>Quality issues and limitations.</b> Hair, ruler markings, ink circles, gel bubbles, colour-calibration patches and dark vignette corners all appear (Figure 1). Images come from several clinics and devices, so colour and lighting vary. Resizing every image to a square changes the aspect ratio of most images (the common 600×450 becomes 256×256). The masks were drawn by different annotators, some as smooth polygons and some tracing fine detail, which limits how high any model's Dice can go at the border.</p>
+</div><div style="flex:0 0 46%"><div class="fig"><img src="../figures/lesion_size.png"><div class="cap">Figure 2. Lesion area per split.</div></div></div></div>
+
+<h2>3. Proposed methodology</h2>
+<h3>3.1 Problem statement</h3>
+<p>Given a dermoscopy image, predict a binary mask of the lesion. VM-UNet already outlines most lesions well, but its remaining errors are concentrated at the lesion border (Section 4.3), which is exactly the part used to judge border irregularity. The goal is to make the border more accurate without simply making the model bigger.</p>
+<h3>3.2 Baseline: VM-UNet</h3>
+<div class="fig"><img src="pipeline.svg" style="width:100%"><div class="cap">Figure 3. Baseline pipeline. Encoder stages are initialised from ImageNet VMamba-S. Skip features are added to the decoder at 8×8, 16×16 and 32×32.</div></div>
+<p>A 4×4 patch embedding turns the 256×256 image into a 64×64×96 feature map. Four encoder stages ([2,2,2,2] VSS blocks, with patch merging between them) halve the resolution and double the channels down to 8×8×768. The decoder ([2,2,2,1] blocks) mirrors it with patch expanding, adds the encoder skip features, and a final 4× expand plus a 1×1 convolution gives a lesion probability per pixel. Inside each VSS block, SS2D flattens the feature map in four directions and runs the selective scan on each sequence. Training uses the official settings: BceDice loss (BCE + Dice, weights 1:1), AdamW (lr 10<sup>−3</sup>, weight decay 0.01) and cosine annealing to 10<sup>−5</sup>.</p>
+<table><tr><th></th><th>Paper [1]</th><th>This baseline</th></tr>
+<tr><td>Hardware</td><td>1× NVIDIA RTX A6000 (CUDA scan)</td><td>Intel i7-8700 CPU, 12 threads (our Numba scan)</td></tr>
+<tr><td>Epochs / batch</td><td>300 / 32</td><td>{{EPOCHS}} / 8 (about {{MIN_PER_EP}} min per epoch)</td></tr>
+<tr><td>LR schedule</td><td>cosine, T<sub>max</sub> = 50</td><td>cosine, T<sub>max</sub> = number of epochs</td></tr>
+<tr><td>Checkpoint chosen on</td><td>test set</td><td>separate validation set</td></tr>
+<tr><td>Init., loss, augmentation</td><td colspan="2">identical (VMamba-S ImageNet weights, BceDice, flips + rotation)</td></tr></table>
+<h3>3.3 Running VM-UNet without an NVIDIA GPU</h3>
+<p>The only CUDA-dependent function is <code>selective_scan_fn</code>, which computes h<sub>t</sub> = exp(Δ<sub>t</sub>A)·h<sub>t−1</sub> + Δ<sub>t</sub>B<sub>t</sub>x<sub>t</sub>, y<sub>t</sub> = C<sub>t</sub>·h<sub>t</sub> + D·x<sub>t</sub> along each sequence. I rewrote it in Numba [10], with one CPU thread per channel and a hand-derived backward pass that recomputes the states instead of storing them (<code>cpu_scan/selective_scan_cpu.py</code>, about 150 lines). <code>tests/test_scan.py</code> compares its output and the gradients of all seven inputs with a plain PyTorch loop: the largest relative difference is below 10<sup>−6</sup>. Only this function changes; the rest of the model, the pretrained-weight mapping and the training settings are the official ones.</p>
+<h3>3.4 Proposed extension: boundary-aware VM-UNet</h3>
+<ol>
+<li><b>Boundary-weighted loss.</b> Add a term that weights each pixel by its distance d to the true border, w = 1 + α·exp(−d²/2σ²), or the boundary loss of Kervadec et al. [8]. <i>Why:</i> BceDice weights every pixel equally and is dominated by the easy lesion interior, while {{B_BORDER}}% of the baseline's wrong pixels lie within {{BAND}} px of the true border (Section 4.3).</li>
+<li><b>Attention gates on the skip connections</b> [7]. VM-UNet adds encoder features to the decoder unfiltered, so hair, ruler and vignette edges in the skips can pull the predicted border outward. A gate computed from the decoder feature can suppress them at under 1% extra parameters.</li>
+<li><b>Per-sample random rotation</b>, fixing the fixed-angle bug found in Section 2.3. This is measured separately so it isn't confused with 1 and 2.</li>
+</ol>
+<p>Each change is trained with the same split, epochs and seed as the baseline, then all of them together. None of them makes the model meaningfully bigger.</p>
+<h3>3.5 Evaluation metrics</h3>
+<p>For comparison with the paper: mIoU, DSC, accuracy, specificity and sensitivity computed from one confusion matrix over all test pixels, exactly as in the official <code>engine.py</code>. For the border objective: per-image Dice and IoU (mean), <b>HD95</b> in pixels, and the <b>border-error share</b>, the fraction of wrong pixels within {{BAND}} px of the true border. Improvements will be checked with a Wilcoxon signed-rank test on per-image Dice.</p>
+
+<h2>4. Baseline results</h2>
+<table class="res"><tr><th>Model (ISIC 2018)</th><th>mIoU</th><th>DSC</th><th>Acc</th><th>Spe</th><th>Sen</th><th>Note</th></tr>
+{{TABLE}}</table>
+<div class="cap" style="text-align:left;margin-top:-4px">Table. Pooled pixel metrics (%) on the 808 test images; formulas from the official code. The paper's numbers are on its own split.</div>
+<div class="two"><div>
+<h3>4.1 Comparison with the paper and the gap</h3>
+<p>The CPU baseline was trained for {{EPOCHS}} epochs (best validation loss at epoch {{BEST_EP}}) and reaches DSC {{B_DSC}}% and mIoU {{B_MIOU}}% on the test set, {{GAP}} DSC points below the paper. The main reason is training length: {{EPOCHS}} epochs instead of 300, because each epoch takes about {{MIN_PER_EP}} minutes on this CPU. The other reasons are a different random split, a smaller batch, and selecting the checkpoint on a validation set instead of the test set.</p>
+<p>To separate the code from the training length, I also ran the authors' released ISIC 2018 checkpoint through the same CPU code on our test split. It scores DSC {{A_DSC}}% ({{GAP_AUTH}} points from the paper). Since the CPU scan matches the reference, this suggests the model code and metrics reproduce the paper's behaviour. This number is optimistic, though: the authors' training split is unknown, so some of our test images were probably in their training set.</p>
+</div><div style="flex:0 0 44%"><div class="fig"><img src="../figures/training_curve.png"><div class="cap">Figure 4. Training curve of the CPU baseline.</div></div></div></div>
+<h3>4.2 Per-image and border metrics</h3>
+<table><tr><th>Model</th><th>mean Dice</th><th>median Dice</th><th>HD95 (px)</th><th>images with Dice &lt; 0.7</th><th>wrong pixels within {{BAND}} px of border</th></tr>
+<tr><td>Our CPU baseline</td><td>{{B_DMEAN}}</td><td>{{B_DMED}}</td><td>{{B_HD}}</td><td>{{B_LOW}} / {{N_TEST}}</td><td>{{B_BORDER}}%</td></tr>
+<tr><td>Authors' checkpoint</td><td>{{A_DMEAN}}</td><td>–</td><td>{{A_HD}}</td><td>{{A_LOW}} / {{N_TEST}}</td><td>{{A_BORDER}}%</td></tr></table>
+<p>CPU inference takes {{SEC_IMG}} s per image.</p>
+<h3>4.3 Correct and failed examples</h3>
+<div class="fig"><img src="../results/baseline/test/examples.png" style="width:72%"><div class="cap">Figure 5. The three worst (top) and three best (bottom) test images for the CPU baseline. In the overlay, red marks false-positive pixels, blue false-negative pixels and yellow the predicted border.</div></div>
+<p><b>Discussion.</b> On clear, high-contrast lesions the prediction follows the border to within a few pixels. The failures fall into three groups: (i) low-contrast or very light lesions, where the model misses part of the lesion (blue); (ii) dark vignette corners, hair or ink near the lesion, which the model joins to the lesion (red); and (iii) very large lesions running off the image. Even in good images, most errors are a thin band along the border: on average {{B_BORDER}}% of wrong pixels lie within {{BAND}} px of the true border. This supports the boundary-weighted loss (Section 3.4, item 1). The artefact-driven false positives support the gated skip connections (item 2).</p>
+
+<h2>5. Work plan (Weeks 9–14)</h2>
+<table><tr><th>Week</th><th>Tasks (all by {{NAME}}, solo group)</th><th>Output</th></tr>
+<tr><td>9 (30 Nov – 4 Dec)</td><td>Continue baseline training to more epochs (overnight CPU runs); try the official CUDA code on Colab Pro to measure the effect of training length; implement the boundary-weighted loss.</td><td>longer baseline; loss code + unit test</td></tr>
+<tr><td>10 (7 – 11 Dec)</td><td>Train and evaluate extension 1 (boundary loss); tune α, σ on the validation set.</td><td>Dice / HD95 vs baseline</td></tr>
+<tr><td>11 (14 – 18 Dec)</td><td>Implement attention-gated skips (extension 2) and the per-sample rotation fix (3); train both.</td><td>results for 2 and 3</td></tr>
+<tr><td>12 (21 – 25 Dec)</td><td>Combine the best changes; ablation table; Wilcoxon test on per-image Dice.</td><td>final model, ablation</td></tr>
+<tr><td>13 (28 Dec – 1 Jan)</td><td>Error analysis by lesion size and artefact type; qualitative figures; start the final report.</td><td>figures, draft report</td></tr>
+<tr><td>14 (4 – 8 Jan)</td><td>Final report, slides and presentation; tag the final release on GitHub.</td><td>final submission</td></tr></table>
+<p><b>Risks.</b> CPU training time limits how many runs fit; mitigated by using Colab Pro for long runs and keeping the same epoch budget for every compared model.</p>
+
+<h2 class="pb">6. Member contribution declaration</h2>
+<table><tr><th>Name</th><th>Matric no.</th><th>Main tasks so far</th><th>Share (%)</th><th>Signature &amp; date</th></tr>
+<tr><td>{{NAME}}</td><td>{{MATRIC}}</td><td>Paper selection; CPU selective-scan port and tests; data preparation and EDA; baseline training and evaluation; extension design; GitHub repository; report</td><td>100</td><td class="sig"><br><br>27 November 2026</td></tr></table>
+<p><b>What was reused and what was written.</b> Reused: the official VM-UNet code (model, losses, augmentations, normalisation, pretrained-weight mapping) and the VMamba-S ImageNet weights, the authors' released ISIC 2018 checkpoint (evaluation only) and the ISIC 2018 data. Written for this project: the CPU selective scan and its test, the restricted checkpoint loader, the data preparation, EDA, CPU training and evaluation scripts, and this report.</p>
+<p><b>AI tool declaration.</b> Claude (Anthropic) was used to help write the CPU scan, the scripts and drafts of this report. I ran all code locally, and the scan is verified against a reference implementation (<code>tests/test_scan.py</code>). I can explain every part of the work.</p>
+
+<h2>7. References</h2>
+<ol class="ref">
+<li>J. Ruan, J. Li, S. Xiang, “VM-UNet: Vision Mamba UNet for Medical Image Segmentation,” arXiv:2402.02491, 2024. Code: https://github.com/JCruan519/VM-UNet</li>
+<li>A. Gu, T. Dao, “Mamba: Linear-Time Sequence Modeling with Selective State Spaces,” arXiv:2312.00752, 2023.</li>
+<li>Y. Liu et al., “VMamba: Visual State Space Model,” arXiv:2401.10166, 2024.</li>
+<li>N. Codella et al., “Skin Lesion Analysis Toward Melanoma Detection 2018: A Challenge Hosted by the International Skin Imaging Collaboration (ISIC),” arXiv:1902.03368, 2019. Data: https://challenge.isic-archive.com/data/</li>
+<li>P. Tschandl, C. Rosendahl, H. Kittler, “The HAM10000 dataset, a large collection of multi-source dermatoscopic images of common pigmented skin lesions,” <i>Scientific Data</i>, vol. 5, 180161, 2018.</li>
+<li>O. Ronneberger, P. Fischer, T. Brox, “U-Net: Convolutional Networks for Biomedical Image Segmentation,” MICCAI, 2015.</li>
+<li>O. Oktay et al., “Attention U-Net: Learning Where to Look for the Pancreas,” arXiv:1804.03999, 2018.</li>
+<li>H. Kervadec et al., “Boundary loss for highly unbalanced segmentation,” MIDL, PMLR 102, 2019.</li>
+<li>A. Paszke et al., “PyTorch: An Imperative Style, High-Performance Deep Learning Library,” NeurIPS, 2019.</li>
+<li>S. K. Lam, A. Pitrou, S. Seibert, “Numba: A LLVM-based Python JIT Compiler,” LLVM-HPC Workshop, 2015.</li>
+</ol>
+</body></html>

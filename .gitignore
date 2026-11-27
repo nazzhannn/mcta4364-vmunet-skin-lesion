@@ -1,7 +1,11 @@
-data/
-results/
-pre_trained_weights/*.pth
+data/*
+!data/isic18/
+data/isic18/*
+!data/isic18/splits.csv
+!data/isic18/stats.csv
 *.pth
+checkpoints/
 __pycache__/
 *.pyc
 .venv/
+report/report.html
