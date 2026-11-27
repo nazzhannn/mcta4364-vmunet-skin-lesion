@@ -21,7 +21,8 @@ from numba import njit, prange
 
 @njit(parallel=True, fastmath=True, cache=True)
 def _scan_fwd(u, dt, A, Bm, Cm, y):
-    # u, dt, y: (b, d, L); A: (d, n); Bm, Cm: (b, g, n, L)
+    # u, dt, y: (b, d, L); A: (d, n); Bm, Cm: (b, g, L, n), state index last so
+    # the inner loop reads contiguous memory
     nb, nd, L = u.shape
     g = Bm.shape[1]
     n = A.shape[1]
@@ -31,20 +32,24 @@ def _scan_fwd(u, dt, A, Bm, Cm, y):
         d = idx % nd
         gi = d // per_g
         h = np.zeros(n, dtype=np.float32)
+        Ad = A[d]
         for t in range(L):
             dtt = dt[b, d, t]
             du = dtt * u[b, d, t]
+            Bt = Bm[b, gi, t]
+            Ct = Cm[b, gi, t]
             acc = np.float32(0.0)
             for k in range(n):
-                h[k] = np.exp(dtt * A[d, k]) * h[k] + du * Bm[b, gi, k, t]
-                acc += Cm[b, gi, k, t] * h[k]
+                h[k] = np.exp(dtt * Ad[k]) * h[k] + du * Bt[k]
+                acc += Ct[k] * h[k]
             y[b, d, t] = acc
 
 
 @njit(parallel=True, fastmath=True, cache=True)
 def _scan_bwd(u, dt, A, Bm, Cm, gy, du_o, ddt_o, dA_o, dB_o, dC_o):
     # One thread per (batch, group); loops over the channels of that group so
-    # dB/dC (shared by the group) are written without races. dA is per batch.
+    # dB/dC (shared by the group, layout (b, g, L, n)) are written without races.
+    # dA is accumulated per batch and summed afterwards.
     nb, nd, L = u.shape
     g = Bm.shape[1]
     n = A.shape[1]
@@ -53,35 +58,45 @@ def _scan_bwd(u, dt, A, Bm, Cm, gy, du_o, ddt_o, dA_o, dB_o, dC_o):
         b = idx // g
         gi = idx % g
         hs = np.empty((L + 1, n), dtype=np.float32)
+        ea = np.empty((L, n), dtype=np.float32)
         gs = np.zeros(n, dtype=np.float32)
         for d in range(gi * per_g, (gi + 1) * per_g):
-            # recompute the states h_0..h_L (hs[0] = 0)
+            Ad = A[d]
+            # recompute the states h_0..h_L (hs[0] = 0) and keep exp(dt*A)
             for k in range(n):
                 hs[0, k] = 0.0
             for t in range(L):
                 dtt = dt[b, d, t]
                 du = dtt * u[b, d, t]
+                Bt = Bm[b, gi, t]
                 for k in range(n):
-                    hs[t + 1, k] = np.exp(dtt * A[d, k]) * hs[t, k] + du * Bm[b, gi, k, t]
+                    a = np.exp(dtt * Ad[k])
+                    ea[t, k] = a
+                    hs[t + 1, k] = a * hs[t, k] + du * Bt[k]
             for k in range(n):
                 gs[k] = 0.0
+            dAd = dA_o[b, d]
             for t in range(L - 1, -1, -1):
                 dtt = dt[b, d, t]
                 ut = u[b, d, t]
                 gyt = gy[b, d, t]
+                Bt = Bm[b, gi, t]
+                Ct = Cm[b, gi, t]
+                dBt = dB_o[b, gi, t]
+                dCt = dC_o[b, gi, t]
                 du_acc = np.float32(0.0)
                 ddt_acc = np.float32(0.0)
                 for k in range(n):
-                    a = np.exp(dtt * A[d, k])
-                    gs[k] += gyt * Cm[b, gi, k, t]          # dL/dh_t
-                    dC_o[b, gi, k, t] += gyt * hs[t + 1, k]
-                    bk = Bm[b, gi, k, t]
-                    dB_o[b, gi, k, t] += gs[k] * dtt * ut
-                    du_acc += gs[k] * dtt * bk
-                    hp = hs[t, k]
-                    ddt_acc += gs[k] * (bk * ut + hp * a * A[d, k])
-                    dA_o[b, d, k] += gs[k] * hp * a * dtt
-                    gs[k] *= a                               # to h_{t-1}
+                    a = ea[t, k]
+                    gk = gs[k] + gyt * Ct[k]                 # dL/dh_t
+                    dCt[k] += gyt * hs[t + 1, k]
+                    bk = Bt[k]
+                    dBt[k] += gk * dtt * ut
+                    du_acc += gk * dtt * bk
+                    hpa = hs[t, k] * a
+                    ddt_acc += gk * (bk * ut + hpa * Ad[k])
+                    dAd[k] += gk * hpa * dtt
+                    gs[k] = gk * a                           # to h_{t-1}
                 du_o[b, d, t] = du_acc
                 ddt_o[b, d, t] = ddt_acc
 
@@ -91,9 +106,11 @@ def _np(t):
 
 
 class _ScanCore(torch.autograd.Function):
+    # Bm, Cm arrive as (b, g, n, L) like mamba_ssm; the kernels use (b, g, L, n).
     @staticmethod
     def forward(ctx, u, dt, A, Bm, Cm):
-        nu, ndt, nA, nB, nC = _np(u), _np(dt), _np(A), _np(Bm), _np(Cm)
+        nu, ndt, nA = _np(u), _np(dt), _np(A)
+        nB, nC = _np(Bm.transpose(-1, -2)), _np(Cm.transpose(-1, -2))
         y = np.empty_like(nu)
         _scan_fwd(nu, ndt, nA, nB, nC, y)
         ctx.save_for_backward(u, dt, A, Bm, Cm)
@@ -102,15 +119,16 @@ class _ScanCore(torch.autograd.Function):
     @staticmethod
     def backward(ctx, gy):
         u, dt, A, Bm, Cm = ctx.saved_tensors
-        nu, ndt, nA, nB, nC = _np(u), _np(dt), _np(A), _np(Bm), _np(Cm)
+        nu, ndt, nA = _np(u), _np(dt), _np(A)
+        nB, nC = _np(Bm.transpose(-1, -2)), _np(Cm.transpose(-1, -2))
         du = np.empty_like(nu)
         ddt = np.empty_like(ndt)
         dA = np.zeros((nu.shape[0],) + nA.shape, dtype=np.float32)
         dB = np.zeros_like(nB)
         dC = np.zeros_like(nC)
         _scan_bwd(nu, ndt, nA, nB, nC, _np(gy), du, ddt, dA, dB, dC)
-        return (torch.from_numpy(du), torch.from_numpy(ddt),
-                torch.from_numpy(dA.sum(0)), torch.from_numpy(dB), torch.from_numpy(dC))
+        return (torch.from_numpy(du), torch.from_numpy(ddt), torch.from_numpy(dA.sum(0)),
+                torch.from_numpy(dB).transpose(-1, -2), torch.from_numpy(dC).transpose(-1, -2))
 
 
 def _prep(u, delta, B, C, delta_bias, delta_softplus):
