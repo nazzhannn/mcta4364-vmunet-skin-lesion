@@ -21,6 +21,13 @@ try:
 except:
     pass
 
+# MCTA4364 change: without an NVIDIA GPU, mamba_ssm cannot be installed. Fall back
+# to the Numba CPU scan in ../cpu_scan, which computes the same recurrence.
+if "selective_scan_fn" not in globals():
+    import os as _os, sys as _sys
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "..", "..", "cpu_scan"))
+    from selective_scan_cpu import selective_scan_fn, selective_scan_ref
+
 DropPath.__repr__ = lambda self: f"timm.DropPath({self.drop_prob})"
 
 
