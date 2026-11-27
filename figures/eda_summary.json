@@ -1,0 +1,49 @@
+{
+  "images": 2694,
+  "per_split": {
+    "train": 1697,
+    "val": 189,
+    "test": 808
+  },
+  "distinct_original_sizes": 214,
+  "most_common_sizes": [
+    [
+      "1024x768",
+      562
+    ],
+    [
+      "4288x2848",
+      559
+    ],
+    [
+      "3008x2000",
+      380
+    ],
+    [
+      "3872x2592",
+      127
+    ],
+    [
+      "3024x2016",
+      100
+    ]
+  ],
+  "orig_width_range": [
+    576,
+    6748
+  ],
+  "orig_height_range": [
+    480,
+    4499
+  ],
+  "lesion_pixel_share_overall_pct": 21.6,
+  "lesion_frac_median_pct": 14.1,
+  "lesion_frac_per_split_mean_pct": {
+    "train": 21.9,
+    "val": 19.7,
+    "test": 21.5
+  },
+  "small_lesions_lt_5pct": 630,
+  "large_lesions_gt_70pct": 108,
+  "masks_touching_whole_image_gt_95pct": 9
+}
