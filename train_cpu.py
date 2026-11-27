@@ -60,9 +60,11 @@ def transforms_for(train):
 
 def build_model(pretrained):
     model = VMUNet(num_classes=1, input_channels=3, depths=[2, 2, 2, 2], depths_decoder=[2, 2, 2, 1],
-                   drop_path_rate=0.2, load_ckpt_path=pretrained if pretrained else None)
+                   drop_path_rate=0.2, load_ckpt_path=None)
     if pretrained:
-        model.load_from()
+        # same key mapping as the official model.load_from(), but with a restricted unpickler
+        from safe_ckpt import load_vmamba_into
+        load_vmamba_into(model, pretrained)
     return model
 
 
